@@ -4,13 +4,13 @@
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 int wmain(int argc, wchar_t *argv[]){
     /*设置控制台输出为UTF-8编码*/
     SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
-
     /*检查参数*/
     if(argc <= 1){
         fprintf(stderr, "\n格式: unfile -path [程序路径] -[参数]\n");
@@ -20,6 +20,30 @@ int wmain(int argc, wchar_t *argv[]){
         return 1;
     } else if (argc <= 2){
         fprintf(stderr,"\n缺少关键参数 [程序路径]\n");
+        return 1;
+    }
+    /*规范路径*/
+    DWORD pathSize = GetFullPathNameW(argv[2], 0, NULL, NULL);
+    if (pathSize == 0) {
+        fprintf(stderr, "\n无法获取完整路径: %lu\n", GetLastError());
+        return 1;
+    }
+    wchar_t *fullPath = (wchar_t *)malloc((pathSize + 1) * sizeof(wchar_t));
+    if (fullPath == NULL) {
+        fprintf(stderr, "\n内存分配失败\n");
+        return 1;
+    }
+    DWORD result = GetFullPathNameW(argv[2], pathSize, fullPath, NULL);
+    if (result == 0 || result >= pathSize) {
+        fprintf(stderr, "\n无法获取完整路径: %lu\n", GetLastError());
+        free(fullPath);
+        return 1;
+    }
+    /*检查路径是否存在*/
+    DWORD fileAttr = GetFileAttributesW(fullPath);
+    if (fileAttr == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "\n路径不存在: %ls\n", fullPath);
+        free(fullPath);
         return 1;
     }
     /*未实现的参数解析功能*/
@@ -48,7 +72,7 @@ int wmain(int argc, wchar_t *argv[]){
         return 1;
     }
     /*注册文件*/
-    PCWSTR filepath = argv[2];
+    PCWSTR filepath = fullPath;
     outerror = RmRegisterResources(sessionHandle, 1, &filepath, 0, NULL, 0, NULL);
     /*检查文件注册结果*/
     if (outerror != ERROR_SUCCESS) {
@@ -67,12 +91,13 @@ int wmain(int argc, wchar_t *argv[]){
             RmEndSession(sessionHandle);
             return 1;
         }
-        if (needed == 0) {
+        
+        if (outerror == ERROR_SUCCESS) {
+            if (fact_number == 0) {
             fprintf(stderr, "\n没有锁定的进程\n");
             RmEndSession(sessionHandle);
             return 0;
-        }
-        if (outerror == ERROR_SUCCESS) {
+            }
             break;
         }
         if (output != NULL){free(output);}
@@ -91,5 +116,6 @@ int wmain(int argc, wchar_t *argv[]){
     /*结束会话*/
     RmEndSession(sessionHandle);
     free(output);
+    free(fullPath);
     return 0;
 }
